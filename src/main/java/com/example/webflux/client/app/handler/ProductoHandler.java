@@ -11,6 +11,8 @@ import static org.springframework.http.MediaType.*;
 
 import java.net.URI;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 
 import com.example.webflux.client.app.models.Producto;
 import com.example.webflux.client.app.models.services.ProductoService;
@@ -97,19 +99,28 @@ public class ProductoHandler {
 	
 	public Mono<ServerResponse> upload(ServerRequest request){
 		String id = request.pathVariable("id");
-		return request.multipartData().map(multipart -> multipart.toSingleValueMap().get("file"))
+		return errorHandler(
+				request.multipartData().map(multipart -> multipart.toSingleValueMap().get("file"))
 				.cast(FilePart.class)
 				.flatMap(file -> service.upload(file, id))
 				.flatMap(p -> ServerResponse.created(URI.create("/api/client/".concat(p.getId())))
 						.contentType(APPLICATION_JSON)
 						.bodyValue(p))
-				.onErrorResume(error -> {
-					WebClientResponseException responseError = (WebClientResponseException) error;
-					if(responseError.getStatusCode() == HttpStatus.NOT_FOUND) {
-						return ServerResponse.notFound().build();
-					}
-					return Mono.error(responseError);
-				});
+				);
+	}
+	
+	private Mono<ServerResponse> errorHandler(Mono<ServerResponse> response){
+		return response.onErrorResume(error -> {
+			WebClientResponseException errorResponse = (WebClientResponseException) error;
+			if(errorResponse.getStatusCode() == HttpStatus.NOT_FOUND) {
+				Map<String, Object> body = new HashMap<>();
+				body.put("error", "No existe el producto: ".concat(errorResponse.getMessage()));
+				body.put("timestamp", new Date());
+				body.put("status", errorResponse.getStatusCode().value());
+				return ServerResponse.status(HttpStatus.NOT_FOUND).bodyValue(body);
+			}
+			return Mono.error(errorResponse);
+		});
 	}
 
 }
